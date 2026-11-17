@@ -35,6 +35,7 @@ export function createBlueskySentiment({
   let running = false, connected = false, busy = false, generation = 0, dropped = 0;
   let socket, reconnectTimer, connectTimer, startPromise, cursor, reconnects = 0;
   let inference = Promise.resolve(), queuedInference = 0, failures = 0;
+  let classifierBusy = false;
 
   function prune() {
     const cutoff = now() - WINDOW;
@@ -67,10 +68,15 @@ export function createBlueskySentiment({
     const task = inference.then(async () => {
       let timer;
       try {
-        if (!running || epoch !== generation || modelStatus !== "ready") throw new Error("Sentiment classifier unavailable");
-        const work = Promise.resolve().then(() => classifier(text));
+        if (!running || epoch !== generation || modelStatus !== "ready" || classifierBusy)
+          throw new Error("Sentiment classifier unavailable");
+        classifierBusy = true;
+        const work = Promise.resolve().then(() => classifier(text)).finally(() => { classifierBusy = false; });
         const prediction = await Promise.race([work, new Promise((_, reject) => {
-          timer = setTimeout(() => reject(new Error("Sentiment inference timed out")), inferenceTimeoutMs);
+          timer = setTimeout(() => {
+            if (running && epoch === generation) modelStatus = "error";
+            reject(new Error("Sentiment inference timed out"));
+          }, inferenceTimeoutMs);
           timer.unref?.();
         })]);
         const result = Array.isArray(prediction) ? prediction[0] : prediction;
@@ -79,7 +85,6 @@ export function createBlueskySentiment({
         failures = 0;
         return { label, irony: result?.irony === true };
       } catch (error) {
-        // One bad post or timeout is skipped; only a run of failures marks the model as broken.
         if (running && epoch === generation && ++failures >= MAX_FAILURES) modelStatus = "error";
         throw error;
       } finally { text = ""; queuedInference--; clearTimeout(timer); }
@@ -145,12 +150,12 @@ export function createBlueskySentiment({
     prune();
     const previous = records.get(id);
     if (commit.operation === "delete") {
-      if (!previous) return false;
-      records.set(id, { at: eventAt, eventAt, deleted: true, tickers: [], label: null });
+      if (!previous || event.time_us < previous.eventUs) return false;
+      records.set(id, { at: eventAt, eventUs: event.time_us, deleted: true, tickers: [], label: null });
       return true;
     }
     if (commit.operation !== "create" && commit.operation !== "update") return false;
-    if (previous && (commit.operation === "create" || eventAt <= previous.eventAt || previous.deleted)) return false;
+    if (previous && (commit.operation === "create" || event.time_us <= previous.eventUs || previous.deleted)) return false;
     const record = commit.record;
     if (!record || typeof record.text !== "string" || !record.text.length || record.text.length > 10000
       || typeof record.createdAt !== "string") return false;
@@ -158,11 +163,11 @@ export function createBlueskySentiment({
     if (!Number.isFinite(at) || at < now() - WINDOW || at > now() + 300000) return false;
     const found = matching(record.text);
     if (!found.length) {
-      if (previous) records.set(id, { at: eventAt, eventAt, deleted: true, tickers: [], label: null });
+      if (previous) records.set(id, { at: eventAt, eventUs: event.time_us, deleted: true, tickers: [], label: null });
       return false;
     }
     if (queue.length >= maxQueue) { dropped++; return false; }
-    const aggregate = { at, eventAt, tickers: found, label: null };
+    const aggregate = { at, eventUs: event.time_us, tickers: found, label: null };
     records.set(id, aggregate);
     queue.push({ id, record: aggregate, text: record.text.slice(0, 3000) });
     void drain();

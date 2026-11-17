@@ -151,6 +151,33 @@ test("deleted posts are removed and cannot reappear from an in-flight classifica
   ready.stop();
 });
 
+test("an older delete leaves a newer sample intact", async (t) => {
+  const { service } = make();
+  t.after(service.stop);
+  await service.start();
+  assert.equal(service.ingest(event("one", "$GME earnings", START + 1)), true);
+  await settle(() => service.snapshot("GME").total === 1);
+
+  assert.equal(service.ingest(deleted()), false);
+  assert.equal(service.snapshot("GME").total, 1);
+});
+
+test("a newer update within the same millisecond replaces the earlier sample", async (t) => {
+  const { service } = make({ classify: async (text) => text.includes("fell") ? "negative" : "positive" });
+  t.after(service.stop);
+  await service.start();
+  const first = event();
+  service.ingest(first);
+  await settle(() => service.snapshot("GME").positive === 1);
+
+  const update = event("one", "$GME earnings fell");
+  update.commit.operation = "update";
+  update.time_us += 1;
+  assert.equal(service.ingest(update), true);
+  await settle(() => service.snapshot("GME").negative === 1);
+  assert.equal(service.snapshot("GME").positive, 0);
+});
+
 test("expired samples leave the one-hour aggregate and malformed model labels are never fabricated", async () => {
   let now = START;
   const { service } = make({ now: () => now, classify: async () => "negative" });
@@ -216,17 +243,22 @@ test("stream messages are classified and reconnect resumes from the event cursor
   assert.equal(sockets.length, 2);
 });
 
-test("a run of stalled inferences reports an error and never overlaps inferences", async () => {
-  let calls = 0, active = 0, maxActive = 0;
-  const { service } = make({ inferenceTimeoutMs: 5, classify: () => { calls++; active++; maxActive = Math.max(maxActive, active); return new Promise(() => {}); } });
+test("a stalled inference fails the batch without starting another classifier", async (t) => {
+  let calls = 0;
+  const { service } = make({ inferenceTimeoutMs: 5, classify: () => { calls++; return new Promise(() => {}); } });
+  t.after(service.stop);
   await service.start();
   for (let i = 0; i < 5; i++) service.ingest(event(`p${i}`));
   await new Promise((resolve) => setTimeout(resolve, 400));
   assert.equal(service.snapshot("GME").modelStatus, "error");
   assert.equal(service.snapshot("GME").total, 0);
   assert.equal(service.snapshot("GME").dropped, 5);
-  assert.equal(calls, 5);
+  assert.equal(calls, 1);
+
   service.stop();
+  await service.start();
+  await assert.rejects(service.classify("new sample"), /unavailable/);
+  assert.equal(calls, 1);
 });
 
 test("one failed post is skipped, later posts still count, and success resets the failure run", async () => {
