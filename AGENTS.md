@@ -26,7 +26,7 @@ Pumpwatch is a real-time pump-and-dump detector. It is the main feature. The ser
 
 - Web, from `web/`: `npm test`, `npm run lint`, `npm run build`.
 - Research, from `research/`: `uv run --python 3.13 --extra dev pytest -q`.
-- Evals, from `research/`: `python -m evals.run_evals --agent mock`.
+- Evals, from `research/`: `python -m portfolio_risk.rag.ingest`, then `python -m evals.run_evals --agent mock`. Without the ingest step the knowledge questions fail.
 - On Git Bash for Windows, set `MSYS_NO_PATHCONV=1` for `docker exec` paths.
 - Node resolves `localhost` to `::1`, so use `127.0.0.1` in local scripts.
 
