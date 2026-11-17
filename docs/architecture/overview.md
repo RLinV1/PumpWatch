@@ -126,10 +126,11 @@ boundary even after Kafka offsets restart. Latest-score queries order by the eve
 not arrival time, and read only the run's last day of scores.
 
 REST serves latest scores, timelines and recent flags. `SseHub` polls stored flags once a
-second with one query per run and cursor shared by every viewer at that cursor, emits SSE
-events/heartbeats and supports `Last-Event-ID` resume. `api.max-streams` caps open streams
-(default 1000). Scheduled jobs (SSE polling, alerts, retention) share a four-thread pool, so
-a slow webhook cannot stall the stream.
+second and shares one query per run and cursor. It delivers flags and heartbeats on bounded
+virtual threads, with at most one batch in flight per viewer. Slow writes leave other viewers
+free to receive flags. `Last-Event-ID` resumes delivery after a disconnect. `api.max-streams`
+caps open streams (default 1000). Scheduled jobs (SSE polling, alerts, retention) share a
+four-thread pool.
 
 Daily retention jobs delete live `api_scores` older than 7 days, `seen_items` older than
 7 days and `recorded_events` older than `replay.retention-days` (default 30; 0 keeps all
