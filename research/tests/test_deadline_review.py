@@ -17,7 +17,7 @@ from portfolio_risk.agent.base import AgentResult
 def slow_mock(question):
     path = Path(question)
     path.with_suffix(".started").write_text("started")
-    time.sleep(8)
+    time.sleep(20)
     path.write_text("completed")
     return AgentResult(answer="too late")
 
@@ -25,7 +25,8 @@ def slow_mock(question):
 @pytest.mark.parametrize("fallback", [False, True])
 def test_slow_mock_and_fallback_stop_within_shared_deadline(monkeypatch, tmp_path, fallback):
     monkeypatch.setenv("USE_MOCK_LLM", "0" if fallback else "1")
-    monkeypatch.setattr(config, "ASSISTANT_TIMEOUT_SEC", 6.0)
+    # Spawned workers re-import pandas and yfinance: about 1 s on CI, over 5 s on a Windows laptop.
+    monkeypatch.setattr(config, "ASSISTANT_TIMEOUT_SEC", 12.0)
     monkeypatch.setattr(mock_agent, "run", slow_mock)
 
     async def unavailable(question, context):
@@ -39,7 +40,7 @@ def test_slow_mock_and_fallback_stop_within_shared_deadline(monkeypatch, tmp_pat
     started = time.monotonic()
     with pytest.raises(TimeoutError):
         client.run_agent(str(completed))
-    assert time.monotonic() - started < 6.8
+    assert time.monotonic() - started < 12.8
     assert completed.with_suffix(".started").exists(), "slow tool must actually have started"
     assert not completed.exists()
     assert {p.pid for p in multiprocessing.active_children()} == before
