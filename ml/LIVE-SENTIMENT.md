@@ -20,8 +20,9 @@ or streaming samples from the last 60 minutes. Search considers at most 50 resul
 and classifies at most 25 relevant, unique posts. Cashtags match directly; plain
 symbols require financial context. The queue is bounded, inference is serialized,
 timeouts and dropped inputs are reported, and the cache coalesces repeated reads.
-A post whose inference fails or times out is skipped; the model is marked as errored only
-after 5 failures in a row.
+A post whose inference fails is skipped. Five consecutive failures or one timeout mark
+the model as errored. A timed-out classifier can still be running, so the service drops
+pending inputs and stops accepting new inference work.
 One whole-post label is associated with each matching ticker; it is not target-specific.
 
 Post text is transient. Author names and raw posts are not returned or persisted.
