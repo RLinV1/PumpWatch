@@ -80,9 +80,36 @@ Dotted lines are one-off or build-time. Solid lines are runtime traffic. Postgre
 connection from `pipeline`, `web` or `research`. The web and research containers publish no host
 port; the browser reaches them only through `proxy`.
 
+## Why each container exists
+
+Each container owns one job that would be harder or riskier inside another one.
+
+| Container | Why it is a separate container |
+| --- | --- |
+| `kafka` | The event log between services. Ingestion, scoring, recording and serving run at their own pace, and a slow or restarting stage catches up from its offset instead of losing data. It also makes replay possible. |
+| `kafka-init` | Creates the ten topics once with fixed partition counts, then exits. Without it services would race to auto-create topics with default settings. |
+| `postgres` | The only durable store: the connector outbox (records survive a Kafka outage), dedupe state, the API's read tables, alert state and replay recordings. |
+| `connectors` | The only container that talks to outside data sources. It holds the keys, obeys each source's rate limits, and turns every source into one record format. |
+| `pipeline` | Kafka Streams scoring: mentions, features, risk scores and flags. It keeps no database, so it can restart and rebuild its state from Kafka. |
+| `replay` | Records input topics and replays a chosen time window, to reproduce or explain a past flag without live sources. |
+| `api` | The read side for scores and flags, the live SSE flag stream and webhook alerts. It keeps the browser away from Kafka and Postgres. |
+| `web` | Serves the dashboard, answers news, movers and sentiment itself, runs mock mode, and forwards the rest of `/api` to `api` and `research`. |
+| `research` | Stock lookup and the flag assistant. It is Python because its libraries (FastAPI, Chroma, Gemini, yfinance) are Python. It is private: only `web` calls it. |
+| `proxy` | The single public port. It sends the live stream straight to `api` without buffering, and everything else to `web`. |
+| `prometheus` | Observability profile. Stores metrics and evaluates the alert rules. |
+| `blackbox` | Observability profile. Fetches the site the way a visitor does and records whether each check passed and how long it took. |
+| `cadvisor` | Observability profile. CPU, memory and network per container, including those with no metrics of their own (Kafka, Postgres, web, research, Caddy). |
+| `loki` | Observability profile. Keeps every container's logs for 7 days, so they survive restarts. |
+| `alloy` | Observability profile. Ships container logs from the Docker socket to Loki, labelled by service. |
+| `grafana` | Observability profile. The "Pumpwatch health" dashboard over Prometheus and Loki. |
+
+The observability containers are local only. See [observability.md](../operations/observability.md)
+for what each check and panel means.
+
 ## Containers
 
-Profile `apps` starts everything except `kafka`, `kafka-init` and `postgres`, which always start.
+Profile `apps` starts everything except `kafka`, `kafka-init` and `postgres`, which always start,
+and the six observability containers, which start only with profile `observability`.
 Host ports are bound to `127.0.0.1` except the proxy, which uses `PROXY_BIND` (default
 `127.0.0.1`) and `PROXY_PORT` (default `80`). Env var names only; values live in `.env` or the
 Compose file.
@@ -99,6 +126,12 @@ Compose file.
 | `web` | `web/Dockerfile` (Node 22, Next.js build, runs `server.mjs`; pinned models fetched at build) | none (listens on 3000 inside the network) | `api` (via `API_ORIGIN`), `research` (via `RESEARCH_ORIGIN`), Alpaca news/movers/quotes, Jetstream, Bluesky AppView search | nothing durable; sentiment windows are in memory | Docker `HEALTHCHECK` fetching `/` | `DATA_MODE`, `API_ORIGIN`, `RESEARCH_ORIGIN`, `TRUST_PROXY_HEADERS`, `WATCHLIST`, `ALPACA_KEY_ID`, `ALPACA_SECRET_KEY`, `ALPACA_FEED`, `SENTIMENT_ENABLED`, `NEWS_SENTIMENT_ENABLED`, `SENTIMENT_MODEL_DIR` |
 | `research` | `research/Dockerfile.service` (Python 3.13, FastAPI/uvicorn, Chroma library built into the image) | none (8090 inside the network) | `web` (via `PUMPWATCH_API_URL`), Gemini, yfinance when mock data is off | none | `/healthz` | `USE_MOCK_DATA` (set from `RESEARCH_USE_MOCK_DATA`), `USE_MOCK_LLM`, `GEMINI_API_KEY`, `GEMINI_MODEL`, `PUMPWATCH_API_URL` |
 | `proxy` | `caddy:2-alpine`, mounts `deploy/Caddyfile` | `${PROXY_BIND:-127.0.0.1}:${PROXY_PORT:-80}` | `web`, `api` | nothing | none (waits for `web` and `api` healthy) | `PROXY_BIND`, `PROXY_PORT` |
+| `prometheus` | `prom/prometheus:v3.5.0`, profile `observability` | `127.0.0.1:9090` | `/actuator/prometheus` on the four Java services, `cadvisor`, `blackbox` | volume `promdata` (7 days) | none | none |
+| `blackbox` | `prom/blackbox-exporter:v0.27.0`, profile `observability` | none | `proxy` (`/`, `/api/v1/watchlist`, `/api/v1/flags`), `research` `/healthz` | nothing | none | none |
+| `cadvisor` | `gcr.io/cadvisor/cadvisor:v0.52.1`, profile `observability`, privileged | none | host cgroups, containerd socket | nothing | image `HEALTHCHECK` | none |
+| `loki` | `grafana/loki:3.5.3`, profile `observability` | none | pushes from `alloy` | volume `lokidata` (7 days) | none | none |
+| `alloy` | `grafana/alloy:v1.10.0`, profile `observability` | none | Docker socket (read-only) | `loki` | none | none |
+| `grafana` | `grafana/grafana:12.1.0`, profile `observability` | `127.0.0.1:3001` | `prometheus`, `loki` | volume `grafanadata` | none | `GRAFANA_ADMIN_PASSWORD` |
 
 Notes:
 

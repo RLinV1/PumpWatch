@@ -40,6 +40,7 @@ Plans for new behaviour live in [`openspec/changes/`](../openspec/changes/), not
 | [local-setup.md](operations/local-setup.md) | Run the app locally, with or without Docker; the end-to-end news demo runbook |
 | [gcp.md](operations/gcp.md) | Deploy the public mock-data VM on Google Cloud with Terraform |
 | [load-test.md](operations/load-test.md) | k6 read-API and SSE load tests |
+| [observability.md](operations/observability.md) | Local Grafana dashboard: uptime checks, container CPU and memory, logs, alerts |
 | [security-review.md](operations/security-review.md) | Security review of the public VM setup and open items |
 
 ## Product
