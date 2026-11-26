@@ -30,9 +30,13 @@ public class SeenItems {
     }
 
     static final int RETENTION_DAYS = 7; // gap fill reaches back 24h, news backfill less
+    static final int BLUESKY_RETENTION_DAYS = 31;
 
     @Scheduled(cron = "0 23 3 * * *")
     public int purgeOld() {
-        return jdbc.update("DELETE FROM seen_items WHERE first_seen < now() - make_interval(days => ?)", RETENTION_DAYS);
+        return jdbc.update("""
+                DELETE FROM seen_items WHERE first_seen < now()
+                    - make_interval(days => CASE WHEN source = 'bluesky' THEN ? ELSE ? END)""",
+                BLUESKY_RETENTION_DAYS, RETENTION_DAYS);
     }
 }

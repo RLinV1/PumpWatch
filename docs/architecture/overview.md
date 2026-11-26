@@ -132,9 +132,10 @@ free to receive flags. `Last-Event-ID` resumes delivery after a disconnect. `api
 caps open streams (default 1000). Scheduled jobs (SSE polling, alerts, retention) share a
 four-thread pool.
 
-Daily retention jobs delete live `api_scores` older than 7 days, `seen_items` older than
-7 days and `recorded_events` older than `replay.retention-days` (default 30; 0 keeps all
-recordings). Replay-run scores are kept. The browser also
+Daily retention jobs delete live `api_scores` older than 7 days, `seen_items` older than 7 days (31
+for Bluesky, so a delete still reaches a recorded post) and `recorded_events` older than
+`replay.retention-days` (default 30; 0 keeps all
+recordings, but a Bluesky delete only reaches posts recorded in the last 31 days). Replay-run scores are kept. The browser also
 refreshes REST history on stream connection/reconnection to recover gaps and retries
 failed reads.
 
@@ -294,7 +295,7 @@ Bluesky connector (`PostRecord` schema 2) to a hashed author key, linked tickers
 dropped unless `pumpwatch.sources.bluesky.retain-text` is set (default off). When Jetstream reports a delete for a post
 the connector already published, it publishes a `PostDeletion` marker on `raw-posts` under the post's key; the recorder
 deletes that post's `recorded_events` rows. Not purged: `mentions` records on Kafka (post id, hashed author, SimHash; no
-text) until topic retention expires, and the `seen_items` dedupe row (post identifier only) until the daily 7-day
+text) until topic retention expires, and the `seen_items` dedupe row (post identifier only) until the daily 31-day
 purge. Raw-text retention is a flag, not a number of days. Source retention/training permissions are tracked in the [source register](../data/sources.md).
 
 Compose is a single-broker development setup. Cloud deployment, production availability,
