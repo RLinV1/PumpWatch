@@ -61,6 +61,7 @@ Everything is indexed in **[docs/README.md](docs/README.md)**. The main entries:
 | [Source terms](docs/data/terms.md) | Storage terms and rate limits found per source |
 | [Deploy: GCP](docs/operations/gcp.md) | Terraform runbook for the mock-data deployment |
 | [Load tests](docs/operations/load-test.md) | k6 read and SSE tests |
+| [Observability](docs/operations/observability.md) | Local Grafana dashboard: uptime checks, CPU, memory, logs |
 | [Roadmap](docs/product/roadmap.md) | Milestones; task checklists live in `openspec/changes/` |
 
 ## Project status

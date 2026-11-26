@@ -1,0 +1,30 @@
+groups:
+  - name: website
+    rules:
+      - alert: SiteDown
+        expr: probe_success == 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "{{ $labels.instance }} is not answering with 2xx"
+
+      - alert: SiteSlow
+        expr: probe_duration_seconds > 2
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $labels.instance }} takes {{ $value | humanizeDuration }} to answer"
+
+      - alert: ServiceDown
+        expr: up{job="spring"} == 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "{{ $labels.service }} metrics endpoint is not answering"
+
+      - alert: ApiErrors
+        expr: sum(rate(http_server_requests_seconds_count{service="api",status=~"5.."}[5m])) > 0.1
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "API returns {{ $value | humanize }} server errors per second"

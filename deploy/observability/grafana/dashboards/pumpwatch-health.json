@@ -1,0 +1,245 @@
+{
+  "uid": "pumpwatch-health",
+  "title": "Pumpwatch health",
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "service",
+        "label": "Log service",
+        "type": "query",
+        "datasource": { "type": "loki", "uid": "loki" },
+        "query": { "type": 1, "label": "service", "stream": "" },
+        "includeAll": true,
+        "multi": true,
+        "current": { "text": "All", "value": "$__all" },
+        "allValue": ".+",
+        "refresh": 2
+      }
+    ]
+  },
+  "panels": [
+    { "id": 100, "type": "row", "title": "Is the website up?", "collapsed": false, "gridPos": { "x": 0, "y": 0, "w": 24, "h": 1 } },
+    {
+      "id": 1,
+      "title": "What each check means",
+      "type": "text",
+      "gridPos": { "x": 0, "y": 1, "w": 8, "h": 10 },
+      "options": {
+        "mode": "markdown",
+        "content": "Every 15 seconds a probe fetches each address from inside Docker, the way a visitor's request travels.\n\n- **Home page** (`http://proxy/`): Caddy, then the Next.js web server renders the dashboard page. Down means visitors see an error page.\n- **Watchlist API** (`/api/v1/watchlist`): the risk scores the page loads. Caddy, then web; in live mode web forwards it to the Java API and Postgres. In mock mode web answers it alone.\n- **Flags API** (`/api/v1/flags?limit=1`): the latest pump-and-dump flags, same path as the watchlist.\n- **Research service** (`research:8090/healthz`): stock lookup and the flag assistant. Not public; only web calls it.\n\n**Java services** shows whether Prometheus can read each Spring Boot service's metrics. DOWN means the process stopped or hangs.\n\nThe live flag stream (`/api/v1/flags/stream`) is not probed: it never finishes, so a probe cannot time it."
+      }
+    },
+    {
+      "id": 2,
+      "title": "Site checks",
+      "description": "UP when the address answered with HTTP 2xx within 10 seconds on the last probe.",
+      "type": "stat",
+      "gridPos": { "x": 8, "y": 1, "w": 16, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "probe_success", "legendFormat": "{{check}}", "instant": true }],
+      "options": { "colorMode": "background", "textMode": "value_and_name", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [{ "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } } }],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
+        }
+      }
+    },
+    {
+      "id": 3,
+      "title": "Java services",
+      "description": "connectors ingests market and social data, pipeline scores it, api serves scores and flags, replay records and replays topics. UP means /actuator/prometheus answered on the last scrape.",
+      "type": "stat",
+      "gridPos": { "x": 8, "y": 6, "w": 16, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "up{job=\"spring\"}", "legendFormat": "{{service}}", "instant": true }],
+      "options": { "colorMode": "background", "textMode": "value_and_name", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [{ "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } } }],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
+        }
+      }
+    },
+    {
+      "id": 4,
+      "title": "Check response time",
+      "description": "Time each probe took to get a full answer. The SiteSlow alert fires when one stays above 2 seconds for 5 minutes.",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 11, "w": 24, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "probe_duration_seconds", "legendFormat": "{{check}}" }],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+
+    { "id": 101, "type": "row", "title": "Resources", "collapsed": false, "gridPos": { "x": 0, "y": 18, "w": 24, "h": 1 } },
+    {
+      "id": 10,
+      "title": "Docker host CPU",
+      "description": "CPU used by everything in the Docker VM, as a share of all its cores.",
+      "type": "gauge",
+      "gridPos": { "x": 0, "y": 19, "w": 4, "h": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "sum(rate(container_cpu_usage_seconds_total{id=\"/\"}[1m])) / max(machine_cpu_cores)", "instant": true }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit", "min": 0, "max": 1,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 0.7 }, { "color": "red", "value": 0.9 }] }
+        }
+      }
+    },
+    {
+      "id": 11,
+      "title": "Docker host memory",
+      "description": "Memory in use in the Docker VM, as a share of what Docker was given.",
+      "type": "gauge",
+      "gridPos": { "x": 0, "y": 25, "w": 4, "h": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "max(container_memory_working_set_bytes{id=\"/\"}) / max(machine_memory_bytes)", "instant": true }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit", "min": 0, "max": 1,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 0.8 }, { "color": "red", "value": 0.9 }] }
+        }
+      }
+    },
+    {
+      "id": 12,
+      "title": "CPU by container (100% = one core)",
+      "description": "From cAdvisor. A container above 100% is using more than one core.",
+      "type": "timeseries",
+      "gridPos": { "x": 4, "y": 19, "w": 10, "h": 12 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "sum by (service) (rate(container_cpu_usage_seconds_total{service!=\"\"}[1m])) * 100", "legendFormat": "{{service}}" }],
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0 } },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["lastNotNull", "max"], "sortBy": "Last *", "sortDesc": true } }
+    },
+    {
+      "id": 13,
+      "title": "Memory by container",
+      "description": "Working set from cAdvisor: the memory a container needs and cannot give back. Docker kills a container whose limit it reaches.",
+      "type": "timeseries",
+      "gridPos": { "x": 14, "y": 19, "w": 10, "h": 12 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "sum by (service) (container_memory_working_set_bytes{service!=\"\"})", "legendFormat": "{{service}}" }],
+      "fieldConfig": { "defaults": { "unit": "bytes", "min": 0 } },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["lastNotNull", "max"], "sortBy": "Last *", "sortDesc": true } }
+    },
+    {
+      "id": 14,
+      "title": "Network by container",
+      "description": "Bytes per second received (above zero) and sent (below zero).",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 31, "w": 8, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "sum by (service) (rate(container_network_receive_bytes_total{service!=\"\"}[1m]))", "legendFormat": "{{service}} in" },
+        { "refId": "B", "expr": "-sum by (service) (rate(container_network_transmit_bytes_total{service!=\"\"}[1m]))", "legendFormat": "{{service}} out" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "Bps" } }
+    },
+    {
+      "id": 15,
+      "title": "JVM CPU",
+      "description": "CPU used by each Java process, as a share of the cores the JVM sees.",
+      "type": "timeseries",
+      "gridPos": { "x": 8, "y": 31, "w": 8, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "process_cpu_usage{job=\"spring\"}", "legendFormat": "{{service}}" }],
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0 } }
+    },
+    {
+      "id": 16,
+      "title": "JVM heap used",
+      "description": "Java heap in use. A line that only climbs and never drops after garbage collection points to a leak.",
+      "type": "timeseries",
+      "gridPos": { "x": 16, "y": 31, "w": 8, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "sum by (service) (jvm_memory_used_bytes{area=\"heap\"})", "legendFormat": "{{service}}" }],
+      "fieldConfig": { "defaults": { "unit": "bytes" } }
+    },
+    {
+      "id": 17,
+      "title": "JVM garbage collection pause",
+      "description": "Seconds per second each Java service spent paused for garbage collection. High values mean slow responses.",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 39, "w": 12, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "sum by (service) (rate(jvm_gc_pause_seconds_sum[1m]))", "legendFormat": "{{service}}" }],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "id": 18,
+      "title": "JVM live threads",
+      "description": "Threads alive in each Java service. A steady climb points to a thread leak.",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 39, "w": 12, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "jvm_threads_live_threads", "legendFormat": "{{service}}" }]
+    },
+
+    { "id": 102, "type": "row", "title": "Java API", "collapsed": false, "gridPos": { "x": 0, "y": 46, "w": 24, "h": 1 } },
+    {
+      "id": 20,
+      "title": "API requests by status",
+      "description": "Requests the Java API served per second, by HTTP status. Empty in mock mode, because web answers /api itself.",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 47, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (status) (rate(http_server_requests_seconds_count{service=\"api\",uri!~\"/actuator.*\"}[1m]))",
+          "legendFormat": "{{status}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps" } }
+    },
+    {
+      "id": 21,
+      "title": "API p95 latency by route",
+      "description": "95% of requests to each route finished faster than this. Empty in mock mode.",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 47, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le, uri) (rate(http_server_requests_seconds_bucket{service=\"api\",uri!~\"/actuator.*\"}[5m])))",
+          "legendFormat": "{{uri}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+
+    { "id": 103, "type": "row", "title": "Logs", "collapsed": false, "gridPos": { "x": 0, "y": 55, "w": 24, "h": 1 } },
+    {
+      "id": 30,
+      "title": "Error lines per minute",
+      "description": "Log lines containing error, exception or fatal, per service. Pick services with the Log service filter at the top.",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 56, "w": 24, "h": 6 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (service) (count_over_time({service=~\"$service\"} |~ \"(?i)\\\\b(error|exception|fatal)\\\\b\" [1m]))",
+          "legendFormat": "{{service}}"
+        }
+      ]
+    },
+    {
+      "id": 31,
+      "title": "Logs",
+      "description": "Every container's output, newest first. Kept for 7 days, including containers that restarted.",
+      "type": "logs",
+      "gridPos": { "x": 0, "y": 62, "w": 24, "h": 14 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [{ "refId": "A", "expr": "{service=~\"$service\"}" }],
+      "options": { "showTime": true, "sortOrder": "Descending", "enableLogDetails": true, "wrapLogMessage": true }
+    }
+  ]
+}
